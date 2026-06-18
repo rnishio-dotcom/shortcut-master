@@ -138,6 +138,34 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',-apple-system
 }
 .tbar.warn{background:linear-gradient(90deg,var(--red),var(--yellow))}
 
+/* ── Game nav bar ── */
+.game-nav{display:flex;justify-content:space-between;align-items:center}
+.btn-nav{
+  background:none;border:1px solid var(--border);color:var(--muted);
+  padding:.4rem .875rem;border-radius:8px;cursor:pointer;
+  font-size:.8rem;transition:all .2s;white-space:nowrap;
+}
+.btn-nav:hover{border-color:var(--accent);color:var(--accent)}
+.btn-nav-pause{background:var(--surface2)}
+
+/* ── Pause overlay ── */
+#pause-overlay{
+  display:none;position:fixed;inset:0;
+  background:rgba(13,17,23,.97);z-index:300;
+  flex-direction:column;align-items:center;justify-content:center;gap:1.5rem;
+}
+#pause-overlay.active{display:flex}
+.pause-title{
+  font-size:clamp(2.5rem,7vw,4rem);font-weight:900;letter-spacing:.15em;
+  background:linear-gradient(135deg,var(--accent),var(--purple));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.pause-sub{font-size:.875rem;color:var(--muted)}
+.pause-actions{
+  display:flex;flex-direction:column;align-items:center;
+  gap:.75rem;width:100%;max-width:280px;margin-top:.5rem;
+}
+
 /* question area */
 .q-area{
   flex:1;display:flex;flex-direction:column;
@@ -392,11 +420,16 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',-apple-system
         </div>
       </div>
     </div>
-    <button class="btn-back" id="btn-back-lv">← カテゴリ選択に戻る</button>
+    <button class="btn-back" id="btn-back-lv">← カテゴリに戻る</button>
   </div>
 
   <!-- ③ ゲーム画面 -->
   <div id="screen-game" class="screen">
+    <div class="game-nav">
+      <button class="btn-nav" id="btn-back-to-level">← レベルに戻る</button>
+      <button class="btn-nav btn-nav-pause" id="btn-pause">⏸ 一時停止</button>
+    </div>
+
     <div class="game-top">
       <div class="meta">
         <div class="meta-lbl">タイム</div>
@@ -477,7 +510,7 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',-apple-system
       </div>
       <div class="res-actions">
         <button class="btn-primary" id="btn-retry">もう一度挑戦</button>
-        <button class="btn-secondary" id="btn-to-home">カテゴリ選択に戻る</button>
+        <button class="btn-secondary" id="btn-to-home">🏠 ホームに戻る</button>
       </div>
 
       <div class="review-section">
@@ -490,6 +523,17 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',-apple-system
 </div>
 
 <div id="combo-flash"></div>
+
+<!-- Pause overlay -->
+<div id="pause-overlay">
+  <div class="pause-title">⏸ PAUSED</div>
+  <div class="pause-sub">Esc キーで再開</div>
+  <div class="pause-actions">
+    <button class="btn-primary" id="btn-resume">▶ 再開</button>
+    <button class="btn-secondary" id="btn-pause-to-level">← レベル選択に戻る</button>
+    <button class="btn-secondary" id="btn-pause-to-home">🏠 ホームに戻る</button>
+  </div>
+</div>
 
 <script>
 // ================================================================
@@ -641,8 +685,9 @@ const S = {
   idx: 0, score: 0, combo: 0, maxCombo: 0,
   correct: 0, wrong: 0, timeLeft: 60,
   timer: null, processing: false, waiting: false, over: false,
-  input: null,  // current key combo in buffer
-  log: [],      // per-question records
+  paused: false,
+  input: null,
+  log: [],
 };
 
 // ================================================================
@@ -709,8 +754,10 @@ function beginGame() {
   S.idx = 0; S.score = 0; S.combo = 0; S.maxCombo = 0;
   S.correct = 0; S.wrong = 0; S.timeLeft = 60;
   S.processing = false; S.waiting = false; S.over = false;
+  S.paused = false;
   S.input = null;
   S.log = S.questions.map(q => ({ desc: q.desc, expected: q.key, answered: null, ok: false }));
+  document.getElementById('pause-overlay').classList.remove('active');
 
   showScreen('screen-game');
   document.getElementById('game-tag').textContent = `${S.cat} · ${S.level}`;
@@ -784,7 +831,42 @@ function startTimer() {
   }, 1000);
 }
 
+function togglePause() {
+  if (S.over) return;
+  S.paused = !S.paused;
+  const overlay = document.getElementById('pause-overlay');
+  if (S.paused) {
+    clearInterval(S.timer);
+    overlay.classList.add('active');
+  } else {
+    overlay.classList.remove('active');
+    startTimer();
+  }
+}
+
+function goToLevel() {
+  clearInterval(S.timer);
+  S.over = true;
+  S.paused = false;
+  document.getElementById('pause-overlay').classList.remove('active');
+  showScreen('screen-level');
+}
+
+function goToHome() {
+  clearInterval(S.timer);
+  S.over = true;
+  S.paused = false;
+  document.getElementById('pause-overlay').classList.remove('active');
+  showScreen('screen-home');
+}
+
 function onKey(e) {
+  // Esc: resume when paused, otherwise treat as regular key
+  if (S.paused) {
+    if (e.key === 'Escape') { e.preventDefault(); togglePause(); }
+    return;
+  }
+
   if (S.over || S.processing) return;
   e.preventDefault();
 
@@ -969,6 +1051,16 @@ document.addEventListener('keydown', e => {
   if (document.getElementById('screen-game').classList.contains('active')) onKey(e);
 });
 
+// Game nav buttons
+document.getElementById('btn-back-to-level').addEventListener('click', goToLevel);
+document.getElementById('btn-pause').addEventListener('click', togglePause);
+
+// Pause overlay buttons
+document.getElementById('btn-resume').addEventListener('click', togglePause);
+document.getElementById('btn-pause-to-level').addEventListener('click', goToLevel);
+document.getElementById('btn-pause-to-home').addEventListener('click', goToHome);
+
+// Result buttons
 document.getElementById('btn-retry').addEventListener('click', () => {
   if (S.cat === 'Chrome') {
     document.getElementById('chrome-warning').classList.add('open');
@@ -977,10 +1069,7 @@ document.getElementById('btn-retry').addEventListener('click', () => {
   }
 });
 
-document.getElementById('btn-to-home').addEventListener('click', () => {
-  clearInterval(S.timer);
-  showScreen('screen-home');
-});
+document.getElementById('btn-to-home').addEventListener('click', goToHome);
 
 // Mobile guard (runtime check supplements CSS)
 (function mobileCheck() {
